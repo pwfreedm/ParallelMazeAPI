@@ -222,8 +222,8 @@ public:
   {
     return !(*this == o);
   }
-  
-  int 
+
+  int
   val ()
   {
     //TODO: once support for forward iterators is implemented, use ranges::accumulate here
@@ -302,7 +302,7 @@ public:
 
   template<std::uniform_random_bit_generator T>
   void
-  connectRandomNeighbor (T &r, int idx)
+  connectRandomNeighbor (T& r, int idx)
   {
     //TODO: Implement this method
   }
@@ -340,10 +340,7 @@ public:
     {
       int row = i * m.wid;
       os << m[row];
-      for (int j = 1; j < m.wid / 2; ++i)
-      {
-        os << ' ' << m[row + j];
-      }
+      for (int j = 1; j < m.wid / 2; ++i) { os << ' ' << m[row + j]; }
       os << '\n';
     }
     return os;
