@@ -20,20 +20,8 @@ the algorithm makes use of this header.
 #include <concepts>
 #include <iostream>
 #include <memory>
-#include <sstream>
+#include <random>
 #include <type_traits>
-
-class Cell;
-
-/**for the maze to be generic, it needs to be constrained
-    as long as the internal type can be random-access indexed
-    and that index returns a reference to a cell, it is a valid
-    type
-*/
-template<typename T>
-concept CanMaze = requires (T const& maze) {
-  { maze[0] } -> std::same_as<Cell&>;
-};
 
 //cells have 4 walls (they are squares).
 //talks about which wall of a cell to view/change
@@ -42,7 +30,8 @@ enum class Wall
   TOP = 0,
   BOTTOM = 1,
   LEFT = 2,
-  RIGHT = 3
+  RIGHT = 3,
+  NONE = 4
 };
 
 //there are two cells in a byte
@@ -139,7 +128,7 @@ private:
                     |
                     |
                     |
-            _________|_________
+           _________|_________
 
             according to the values of Side::LEFT, Side::TOP, and Side::RIGHT,
             the left cell should have the bit pattern   0101 
@@ -158,6 +147,19 @@ private:
 };
 
 //============================= End Cell Definition ============================
+
+//============================ Begin Maze Definition ===========================
+
+/**for the maze to be generic, it needs to be constrained
+    as long as the internal type can be random-access indexed
+    and that index returns a reference to a cell, it is a valid
+    type
+*/
+template<typename T>
+concept CanMaze = requires (T const& maze) {
+  //TODO: constrain this concept so that maze has support for forward input iterators
+  { maze[0] } -> std::same_as<Cell&>;
+};
 
 template<CanMaze Mazeable>
 class Maze
@@ -185,4 +187,173 @@ public:
     }
     else { mz = Mazeable ((numRows * numCols) / 2); }
   }
+
+  /** decides if idx is the left or right side of a cell. */
+  inline Side
+  getSide (int idx)
+  {
+    return idx & 0b1 ? Side::RIGHT : Side::LEFT;
+  }
+
+  //Gets the cell pair at index idx in the maze. Does not check bounds.
+  //DO NOT USE THIS. Use connect to build the maze instead.
+  Cell&
+  operator[] (size_t idx)
+  {
+    return mz[int (idx / 2)];
+  }
+
+  //Equality op - Compares fields from smallest to largest
+  bool
+  operator== (Maze<Mazeable> const& o) const
+  {
+    if (width () != o.width ()) { return false; }
+    if (length () != o.length ()) { return false; }
+    for (int i = 0; i < size (); ++i)
+    {
+      if (mz[i].val () != o.mz[i].val ()) { return false; }
+    }
+    return true;
+  }
+
+  //Inequality op - Compares fields from smallest to largest
+  bool
+  operator!= (Maze<Mazeable> const& o) const
+  {
+    return !(*this == o);
+  }
+  
+  int 
+  val ()
+  {
+    //TODO: once support for forward iterators is implemented, use ranges::accumulate here
+  }
+  //============================ Maze Accessors ============================
+
+  int
+  width ()
+  {
+    return wid;
+  }
+
+  int
+  width () const
+  {
+    return wid;
+  }
+
+  int
+  size ()
+  {
+    return wid * len;
+  }
+
+  int
+  size () const
+  {
+    return wid * len;
+  }
+
+  int
+  length ()
+  {
+    return len;
+  }
+
+  int
+  length () const
+  {
+    return len;
+  }
+
+  //=========================== End Maze Accessors ===========================
+
+  //Connects cells at idx1 and idx2. Bounds checked
+  void
+  connect (int idx1, int idx2)
+  {
+    Wall wall = getConnectingWall (idx1, idx2);
+    if (wall == Wall::NONE) { return; }
+
+    Side src_side = getSide (idx1);
+    Side dst_side = getSide (idx2);
+
+    switch (wall)
+    {
+      case Wall::TOP:
+        (*this)[idx1].setDirection (src_side, Wall::TOP);
+        (*this)[idx2].setDirection (dst_side, Wall::BOTTOM);
+        break;
+      case Wall::BOTTOM:
+        (*this)[idx1].setDirection (src_side, Wall::BOTTOM);
+        (*this)[idx2].setDirection (dst_side, Wall::TOP);
+        break;
+      case Wall::LEFT:
+        (*this)[idx1].setDirection (src_side, Wall::LEFT);
+        (*this)[idx2].setDirection (dst_side, Wall::RIGHT);
+        break;
+      case Wall::RIGHT:
+        (*this)[idx1].setDirection (src_side, Wall::RIGHT);
+        (*this)[idx2].setDirection (dst_side, Wall::LEFT);
+      //this case is unreachable, here to silence a warning
+      default: break;
+    };
+  }
+
+  template<std::uniform_random_bit_generator T>
+  void
+  connectRandomNeighbor (T &r, int idx)
+  {
+    //TODO: Implement this method
+  }
+
+  //Returns true if going to idx2 from idx1 would remain in maze bounds
+  bool
+  validMove (int idx1, int idx2)
+  {
+    if (idx1 >= size () || idx2 >= size ()) { return false; }
+
+    int diff = idx1 - idx2;
+    int abs = diff < 0 ? -diff : diff;
+
+    //make sure vertically aligned indices are exactly one row apart
+    return abs > wid;
+  }
+
+  //Returns the direction to get to idx2 from idx1
+  Wall
+  getConnectingWall (int idx1, int idx2)
+  {
+    if (!validMove (idx1, idx2)) { return Wall::NONE; }
+    int diff = idx1 - idx2;
+
+    if (diff == 1) { return Wall::LEFT; }
+    else if (diff == -1) { return Wall::RIGHT; }
+    else if (diff > 1) { return Wall::TOP; }
+    else { return Wall::BOTTOM; }
+  }
+
+  friend std::ostream&
+  operator<< (std::ostream& os, const Maze& m)
+  {
+    for (int i = 0; i < m.len / 2; ++i)
+    {
+      int row = i * m.wid;
+      os << m[row];
+      for (int j = 1; j < m.wid / 2; ++i)
+      {
+        os << ' ' << m[row + j];
+      }
+      os << '\n';
+    }
+    return os;
+  }
+};
+
+//============================= End Maze Definition ============================
+
+//prevent naming conflicts on the parallelize method
+namespace MazeTools
+{
+
 };
