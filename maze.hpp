@@ -302,22 +302,32 @@ public:
 
   template<std::uniform_random_bit_generator T>
   void
-  connectRandomNeighbor (T& r, int idx)
+  connectRandomNeighbor (T& r, int idx, bool allowLoops = false)
   {
-    //TODO: Implement this method
+    std::uniform_int_distribution dist(0, 4);
+
+    while ()
+    //need to do this in exactly one rng call 
+    //how can I store up to four indices as efficiently as possible
   }
 
   //Returns true if going to idx2 from idx1 would remain in maze bounds
   bool
-  validMove (int idx1, int idx2)
+  validMove (int srcIdx, int dstIdx)
   {
-    if (idx1 >= size () || idx2 >= size ()) { return false; }
+    //move is invalid if either index is out of bounds
+    bool valid = srcIdx >= size() && dstIdx >= size(); 
 
-    int diff = idx1 - idx2;
+    int diff = srcIdx - dstIdx;
     int abs = diff < 0 ? -diff : diff;
 
     //make sure vertically aligned indices are exactly one row apart
-    return abs > wid;
+    valid &= abs > wid;
+
+    //disallow connecting the last cell in one row and the first in the next
+    valid &= ((diff == -1 && dstIdx % wid != 0) | (diff == 1 && dstIdx % wid != 0));
+
+    return valid;
   }
 
   //Returns the direction to get to idx2 from idx1
@@ -344,6 +354,26 @@ public:
       os << '\n';
     }
     return os;
+  }
+
+  private:
+
+  /** turns a wall and an index into two indices, then calls validMove with them.  */
+  bool validMove (int srcIdx, Wall connection)
+  {
+    switch (connection)
+    {
+      case Wall::TOP:
+        return validMove(srcIdx, srcIdx - wid);
+      case Wall::BOTTOM: 
+        return validMove(srcIdx, srcIdx + wid);
+      case Wall::LEFT:
+        return validMove(srcIdx, --srcIdx);
+      case Wall::RIGHT:
+        return validMove(srcIdx, ++srcIdx);
+      default:
+        return false;
+    }
   }
 };
 
