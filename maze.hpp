@@ -315,9 +315,13 @@ public:
 
     valid.reset ();
 
-    //TODO: somewhere in here there needs to be a check for whether or not the valid move is already in the maze
-    //that then needs to be compared against allowLoops to decide if the cell can actually be connected
-    for (int i = 0; i < 4; ++i) { valid[i] = validMove(idx, Wall(i)); }
+    // TODO: somewhere in here there needs to be a check for whether or not the
+    // valid move is already in the maze that then needs to be compared against
+    // allowLoops to decide if the cell can actually be connected
+    for (int i = 0; i < 4; ++i)
+    {
+      valid[i] = validConnectingWall (idx, Wall (i));
+    }
 
     // since valid has 4 bits, the most this value can ever amount to is 4
     uint8_t num = dist (r);
@@ -327,7 +331,7 @@ public:
     while (!valid[num]) { num = dist (r); }
 
     auto idx2 = wallToIdx2 (idx, Wall (num));
-    if (idx2) { connect (idx, idx2.value()); }
+    if (idx2) { connect (idx, idx2.value ()); }
 
     return idx2;
   }
@@ -401,7 +405,7 @@ private:
   /** turns a wall and an index into two indices, then calls validMove with
    * them.  */
   bool
-  validMove (int srcIdx, Wall connection)
+  validConnectingWall (int srcIdx, Wall connection)
   {
     switch (connection)
     {
