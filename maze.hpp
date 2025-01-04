@@ -222,7 +222,7 @@ public:
 
   // converts the maze to an int by adding together the values of all cells
   // can be used to say that a given maze is most likely equal to another maze
-  // significantly faster than operator==
+  // significantly faster than operator== will find two mazes equal
   int
   val ()
   {
@@ -388,7 +388,7 @@ private:
   std::optional<int>
   wallToIdx2 (int idx1, Wall connection)
   {
-    
+
     std::optional<int> idx2{std::nullopt};
 
     switch (connection)
@@ -398,7 +398,7 @@ private:
       case Wall::LEFT: idx2 = idx1 - 1; break;
       case Wall::RIGHT: idx2 = idx1 + 1; break;
     }
-    return validMove (idx1, idx2.value()) ? idx2 : std::nullopt;
+    return validMove (idx1, idx2.value ()) ? idx2 : std::nullopt;
   }
 
   /** turns a wall and an index into two indices, then calls validMove with
