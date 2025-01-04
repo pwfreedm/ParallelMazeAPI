@@ -19,12 +19,9 @@ the algorithm makes use of this header.
 
 #include <bitset>
 #include <concepts>
-#include <cstddef>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <random>
-#include <type_traits>
 
 // cells have 4 walls (they are squares).
 // talks about which wall of a cell to view/change
@@ -33,8 +30,7 @@ enum class Wall
   TOP = 0,
   BOTTOM = 1,
   LEFT = 2,
-  RIGHT = 3,
-  NONE = 4
+  RIGHT = 3
 };
 
 // there are two cells in a byte
@@ -93,14 +89,14 @@ private:
 
   // interprets the requested side of the cell as an integer
   inline int
-  side_val (Side l_or_r) const
+  sideVal (Side l_or_r) const
   {
     return (pair >> int (l_or_r)) & 0b1111;
   }
 
   // returns true if the provided cell wall is opened, false o/w
   inline bool
-  dir_val (Side l_or_r, Wall wall) const
+  wallIsOpened (Side l_or_r, Wall wall) const
   {
     return (pair >> (int (l_or_r) + int (wall))) & 0b1;
   }
@@ -143,7 +139,7 @@ private:
   friend std::ostream&
   operator<< (std::ostream& os, const Cell& c)
   {
-    os << c.side_val (Side::LEFT) << ' ' << c.side_val (Side::RIGHT);
+    os << c.sideVal (Side::LEFT) << ' ' << c.sideVal (Side::RIGHT);
     return os;
   }
 };
@@ -159,8 +155,6 @@ private:
 */
 template<typename T>
 concept CanMaze = requires (T const& maze) {
-  // TODO: constrain this concept so that maze has support for forward input
-  // iterators
   { maze[0] } -> std::same_as<Cell&>;
 };
 
@@ -226,11 +220,15 @@ public:
     return !(*this == o);
   }
 
+  // converts the maze to an int by adding together the values of all cells
+  // can be used to say that a given maze is most likely equal to another maze
+  // significantly faster than operator==
   int
   val ()
   {
-    // TODO: once support for forward iterators is implemented, use
-    // ranges::accumulate here
+    int val = 0;
+    for (int i = 0; i < size () / 2; i += 2) { val += mz[i].val (); }
+    return val;
   }
   //============================ Maze Accessors ============================
 
@@ -276,9 +274,10 @@ public:
   void
   connect (int idx1, int idx2)
   {
-    Wall wall = idx2ToWall (idx1, idx2);
-    if (wall == Wall::NONE) { return; }
+    auto wall = idx2ToWall (idx1, idx2);
+    if (!wall) { return; }
 
+    wall = wall.value ();
     Side src_side = getSide (idx1);
     Side dst_side = getSide (idx2);
 
@@ -299,31 +298,30 @@ public:
       case Wall::RIGHT:
         (*this)[idx1].setDirection (src_side, Wall::RIGHT);
         (*this)[idx2].setDirection (dst_side, Wall::LEFT);
-      // this case is unreachable, here to silence a warning
-      default: break;
     };
   }
 
-  /** Picks a random neighbor using the provided rng*/
+  /** Picks a random neighbor using the provided rng.
+
+    @p allowLoops - allow or disallow connecting to a cell that is already in
+    the maze returns an optional that contains either the int connected to or
+    nothing if there were no valid connections
+  */
   template<std::uniform_random_bit_generator T>
   std::optional<int>
   connectRandomNeighbor (T& r, int idx, bool allowLoops = false)
   {
-    // don't want to recreate these every time a new neighbor is being connected
-    static std::bitset<4> valid (0b0000);
-    static std::uniform_int_distribution dist (0, 4);
+    std::bitset<4> valid (0b0000);
+    std::uniform_int_distribution dist (0, 3);
 
-    valid.reset ();
-
-    // TODO: somewhere in here there needs to be a check for whether or not the
-    // valid move is already in the maze that then needs to be compared against
-    // allowLoops to decide if the cell can actually be connected
     for (int i = 0; i < 4; ++i)
     {
-      valid[i] = validConnectingWall (idx, Wall (i));
+      // if loops are allowed, the second half of this cnd will always be true
+      valid[i] =
+        validConnectingWall (idx, Wall (i)) && (cellInMaze (idx) <= allowLoops);
     }
 
-    // since valid has 4 bits, the most this value can ever amount to is 4
+    // since valid has 4 bits, the most this value can ever amount to is 3
     uint8_t num = dist (r);
 
     if (valid.count () == 0) { return std::nullopt; }
@@ -359,9 +357,10 @@ public:
   friend std::ostream&
   operator<< (std::ostream& os, const Maze& m)
   {
+    int row = 0;
     for (int i = 0; i < m.len / 2; ++i)
     {
-      int row = i * m.wid;
+      row += m.wid;
       os << m[row];
       for (int j = 1; j < m.wid / 2; ++i) { os << ' ' << m[row + j]; }
       os << '\n';
@@ -371,16 +370,16 @@ public:
 
 private:
   // Returns the direction to get to idx2 from idx1
-  Wall
+  std::optional<Wall>
   idx2ToWall (int idx1, int idx2)
   {
-    if (!validMove (idx1, idx2)) { return Wall::NONE; }
+    if (!validMove (idx1, idx2)) { return std::nullopt; }
     int diff = idx1 - idx2;
 
-    if (diff == 1) { return Wall::LEFT; }
-    else if (diff == -1) { return Wall::RIGHT; }
-    else if (diff > 1) { return Wall::TOP; }
-    else { return Wall::BOTTOM; }
+    if (diff == 1) { return std::make_optional (Wall::LEFT); }
+    else if (diff == -1) { return std::make_optional (Wall::RIGHT); }
+    else if (diff > 1) { return std::make_optional (Wall::TOP); }
+    else { return std::make_optional (Wall::BOTTOM); }
   }
 
   // takes an index and a wall and returns an optional containing the index
@@ -389,7 +388,8 @@ private:
   std::optional<int>
   wallToIdx2 (int idx1, Wall connection)
   {
-    int idx2;
+    
+    std::optional<int> idx2{std::nullopt};
 
     switch (connection)
     {
@@ -397,9 +397,8 @@ private:
       case Wall::BOTTOM: idx2 = idx1 + wid; break;
       case Wall::LEFT: idx2 = idx1 - 1; break;
       case Wall::RIGHT: idx2 = idx1 + 1; break;
-      case Wall::NONE: return std::nullopt;
     }
-    return validMove (idx1, idx2) ? std::make_optional (idx2) : std::nullopt;
+    return validMove (idx1, idx2.value()) ? idx2 : std::nullopt;
   }
 
   /** turns a wall and an index into two indices, then calls validMove with
@@ -415,6 +414,14 @@ private:
       case Wall::RIGHT: return validMove (srcIdx, ++srcIdx);
       default: return false;
     }
+  }
+
+  // returns true if the cell at idx has at least one wall open, false o/w
+  bool
+  cellInMaze (int idx)
+  {
+    // double negation b/c the only values that matter here are 0 and 1
+    return !!(*this)[idx].sideVal (getSide (idx));
   }
 };
 
