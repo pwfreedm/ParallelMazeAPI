@@ -20,6 +20,7 @@ the algorithm makes use of this header.
 #include <bitset>
 #include <concepts>
 #include <memory>
+#include <thread>
 #include <optional>
 #include <random>
 
@@ -331,7 +332,7 @@ public:
     auto idx2 = wallToIdx2 (idx, Wall (num));
     if (idx2) { connect (idx, idx2.value ()); }
 
-    return idx2;
+    return std::make_optional(idx2);
   }
 
   // Returns true if going to idx2 from idx1 would remain in maze bounds
@@ -428,7 +429,21 @@ private:
 //============================= End Maze Definition ============================
 
 // prevent naming conflicts on the parallelize method
-namespace MazeTools
+namespace MazeGeneration
 {
+
+  template <class Func, class... Args>
+  void
+  parallelize (Func&& f, int length, int width, int coreCount = std::thread::hardware_concurrency(), Args&&... args)
+  {
+
+  }
+
+  template <CanMaze Mazeable, class Func, class... Args>
+  Maze<Mazeable>&
+  parallelize (Func&& f, Maze<Mazeable> &maze, int coreCount = std::thread::hardware_concurrency(), Args&&... args)
+  {
+
+  }
 
 };
