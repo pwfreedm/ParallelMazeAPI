@@ -20,6 +20,7 @@ the algorithm makes use of this header.
 #include <bitset>
 #include <concepts>
 #include <memory>
+#include <new>
 #include <thread>
 #include <optional>
 #include <random>
@@ -432,17 +433,39 @@ private:
 namespace MazeGeneration
 {
 
+  #include <vector>
+  #include <span>
+
   template <class Func, class... Args>
   void
   parallelize (Func&& f, int length, int width, int coreCount = std::thread::hardware_concurrency(), Args&&... args)
   {
+    if (width < std::hardware_destructive_interference_size || length < coreCount * 4)
+    {
+      f(std::forward<Args>(args)...);
+      return;
+    }
 
-  }
+    //I really don't want to pull apart the packed arguments
+    //but maybe pulling them apart and finding one that is a Maze would be helpful
+    //could also use template restriction to make the first argument a maze
+    {
+      std::vector <std::jthread> th(coreCount);
 
-  template <CanMaze Mazeable, class Func, class... Args>
-  Maze<Mazeable>&
-  parallelize (Func&& f, Maze<Mazeable> &maze, int coreCount = std::thread::hardware_concurrency(), Args&&... args)
-  {
+      //used to compute the subsection of maze to give to each core
+      int rowsDistributed = 0;
+      int coresWithExtraRow = length % coreCount;
+      int rowsPerCore = length / coreCount;
+
+      for (int thread = 0; thread < coreCount; ++thread)
+      {
+        if (coresWithExtraRow --)
+        {
+
+        }
+      }
+    }
+
 
   }
 
