@@ -187,6 +187,11 @@ public:
     else { mz = Mazeable ((numRows * numCols) / 2); }
   }
 
+  //move ctor - takes ownership of an existing mazeable type by moving it in.
+  //after this constructor is called, mz should not be accessed
+  Maze (Mazeable mz, int numRows, int numCols)
+  :mz(std::move(mz)), len(numRows), wid(numCols) {}
+
   /** decides if idx is the left or right side of a cell. */
   inline Side
   getSide (int idx)
@@ -369,7 +374,7 @@ public:
     }
     return os;
   }
-
+  
 private:
   // Returns the direction to get to idx2 from idx1
   std::optional<Wall>
@@ -432,41 +437,57 @@ private:
 // prevent naming conflicts on the parallelize method
 namespace MazeGeneration
 {
-
   #include <vector>
   #include <span>
 
-  template <class Func, class... Args>
+  /** Parallelizes the generation of @p maze using @p f over @p coreCount cores
+  
+      For this method to work properly, a few things are needed: 
+      1) the first parameter to the algorithm being parallelized needs to ba a maze
+      2) the width of the maze must be at least 128 cells long (64 bytes, 1 cache line)
+      3) the length of the maze must be at least 4x the core count
+      
+      requirements 2 and 3 are imposed to prevent false sharing and save time, as the 
+      overhead of parallelizing generation of small mazes is too high. 
+      
+      NOTE: If any of these conditions are not met, the maze will be generated serially
+  */
+  template <class Func, CanMaze Mazeable, class... Args>
   void
-  parallelize (Func&& f, int length, int width, int coreCount = std::thread::hardware_concurrency(), Args&&... args)
+  parallelize (Func&& f, Maze<Mazeable> &maze, int coreCount, Args&&... args)
   {
-    if (width < std::hardware_destructive_interference_size || length < coreCount * 4)
+    //generate small mazes serially because blocked algorithm restricts domain.
+    if (maze.width() * 2 < std::hardware_destructive_interference_size || maze.length() < coreCount * 4)
     {
-      f(std::forward<Args>(args)...);
+      f(maze, std::forward<Args>(args)...);
       return;
     }
 
-    //I really don't want to pull apart the packed arguments
-    //but maybe pulling them apart and finding one that is a Maze would be helpful
-    //could also use template restriction to make the first argument a maze
+    //blocking and parallel maze generation
     {
-      std::vector <std::jthread> th(coreCount);
+      std::vector <std::jthread> threads(coreCount);
 
       //used to compute the subsection of maze to give to each core
-      int rowsDistributed = 0;
-      int coresWithExtraRow = length % coreCount;
-      int rowsPerCore = length / coreCount;
+      int currentBlockStart = 0;
+      int coresWithExtraRow = maze.length() % coreCount;
+      int numCols = maze.length() / coreCount;
+
+      std::span mz{maze[0], maze.size()};
 
       for (int thread = 0; thread < coreCount; ++thread)
       {
-        if (coresWithExtraRow --)
-        {
+        //need one assignment otherwise the wrong one will be passed to the jthread
+        const int cellCount = numCols * maze.width() + (coresWithExtraRow -- > 0 ? maze.width() : 0);
 
-        }
+        std::span currentBlock = mz.subspan(0, cellCount);
+        mz = mz.subspan(cellCount);
+        threads.emplace_back(f, Maze{currentBlock, numCols, maze.width()}, std::forward<Args> (args)...);
+        currentBlockStart += cellCount;
       }
     }
 
-
+    //TODO: smoothing. At least for now it will be easier to just add it to parallelization. Maybe there is a good
+    //way to allow users to customize it though. 
   }
 
 };
