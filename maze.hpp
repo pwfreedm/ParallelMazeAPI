@@ -186,10 +186,12 @@ private:
 */
 template<typename T>
 concept CanMaze = requires (T const& maze) {
-  { maze[0] } -> std::same_as<Cell&>;
+  // convertible to const because it doesn't matter if a ref is const or not;
+  // the object at the end of the reference is not const.
+  { maze[0] } -> std::convertible_to<const Cell&>;
 };
 
-template<CanMaze Mazeable>
+template<CanMaze Mazeable = std::unique_ptr<Cell[]>>
 class Maze
 {
 
