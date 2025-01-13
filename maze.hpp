@@ -21,9 +21,10 @@ the algorithm makes use of this header.
 #include <concepts>
 #include <memory>
 #include <new>
-#include <thread>
 #include <optional>
 #include <random>
+#include <span>
+#include <thread>
 
 // cells have 4 walls (they are squares).
 // talks about which wall of a cell to view/change
@@ -79,9 +80,37 @@ public:
   // default ctor - do not invoke manually
   Cell () : pair (0) {}
 
-private:
   //============================ Cell Accessors ============================
 
+  // returns true if the top wall of the cell on side l_or_r is opened
+  bool
+  top (Side l_or_r)
+  {
+    return wallIsOpened (l_or_r, Wall::TOP);
+  }
+
+  // returns true if the bottom wall of the cell on side l_or_r is opened
+  bool
+  bottom (Side l_or_r)
+  {
+    return wallIsOpened (l_or_r, Wall::BOTTOM);
+  }
+
+  // returns true if the left wall of the cell on side l_or_r is opened
+  bool
+  left (Side l_or_r)
+  {
+    return wallIsOpened (l_or_r, Wall::LEFT);
+  }
+
+  // returns true if the right wall of the cell on side l_or_r is opened
+  bool
+  right (Side l_or_r)
+  {
+    return wallIsOpened (l_or_r, Wall::RIGHT);
+  }
+
+private:
   // interprets the cell as an integer
   inline int
   val () const
@@ -187,10 +216,12 @@ public:
     else { mz = Mazeable ((numRows * numCols) / 2); }
   }
 
-  //move ctor - takes ownership of an existing mazeable type by moving it in.
-  //after this constructor is called, mz should not be accessed
+  // move ctor - takes ownership of an existing mazeable type by moving it in.
+  // after this constructor is called, mz should not be accessed
   Maze (Mazeable mz, int numRows, int numCols)
-  :mz(std::move(mz)), len(numRows), wid(numCols) {}
+    : mz (std::move (mz)), len (numRows), wid (numCols)
+  {
+  }
 
   /** decides if idx is the left or right side of a cell. */
   inline Side
@@ -338,7 +369,7 @@ public:
     auto idx2 = wallToIdx2 (idx, Wall (num));
     if (idx2) { connect (idx, idx2.value ()); }
 
-    return std::make_optional(idx2);
+    return std::make_optional (idx2);
   }
 
   // Returns true if going to idx2 from idx1 would remain in maze bounds
@@ -374,7 +405,7 @@ public:
     }
     return os;
   }
-  
+
 private:
   // Returns the direction to get to idx2 from idx1
   std::optional<Wall>
@@ -437,57 +468,93 @@ private:
 // prevent naming conflicts on the parallelize method
 namespace MazeGeneration
 {
-  #include <vector>
-  #include <span>
+/** Parallelizes the generation of @p maze using @p f over @p coreCount cores
 
-  /** Parallelizes the generation of @p maze using @p f over @p coreCount cores
-  
-      For this method to work properly, a few things are needed: 
-      1) the first parameter to the algorithm being parallelized needs to ba a maze
-      2) the width of the maze must be at least 128 cells long (64 bytes, 1 cache line)
-      3) the length of the maze must be at least 4x the core count
-      
-      requirements 2 and 3 are imposed to prevent false sharing and save time, as the 
-      overhead of parallelizing generation of small mazes is too high. 
-      
-      NOTE: If any of these conditions are not met, the maze will be generated serially
-  */
-  template <class Func, CanMaze Mazeable, class... Args>
-  void
-  parallelize (Func&& f, Maze<Mazeable> &maze, int coreCount, Args&&... args)
+    For this method to work properly, a few things are needed:
+    1) the first parameter to the algorithm being parallelized needs to ba a
+   maze 2) the second parameter to the algorithm being parallelized needs to be
+   an rng seed 2) the width of the maze must be at least 128 cells long (64
+   bytes, 1 cache line) 3) the length of the maze must be at least 4x the core
+   count
+
+    requirements 2 and 3 are imposed to prevent false sharing and save time, as
+   the overhead of parallelizing generation of small mazes is too high.
+
+    NOTE: If the first two conditions are not met, the program will crash.
+    NOTE: If the last two conditions are not met, the maze will be generated
+   serially
+*/
+template<class Func, CanMaze Mazeable, class... Args>
+void
+parallelize (Func&& f, Maze<Mazeable>& maze, long long seed, int coreCount,
+             Args&&... args)
+{
+  // generate small mazes serially because blocked algorithm restricts domain.
+  if (maze.width () * 2 < std::hardware_destructive_interference_size ||
+      maze.length () < coreCount * 4)
   {
-    //generate small mazes serially because blocked algorithm restricts domain.
-    if (maze.width() * 2 < std::hardware_destructive_interference_size || maze.length() < coreCount * 4)
-    {
-      f(maze, std::forward<Args>(args)...);
-      return;
-    }
-
-    //blocking and parallel maze generation
-    {
-      std::vector <std::jthread> threads(coreCount);
-
-      //used to compute the subsection of maze to give to each core
-      int currentBlockStart = 0;
-      int coresWithExtraRow = maze.length() % coreCount;
-      int numCols = maze.length() / coreCount;
-
-      std::span mz{maze[0], maze.size()};
-
-      for (int thread = 0; thread < coreCount; ++thread)
-      {
-        //need one assignment otherwise the wrong one will be passed to the jthread
-        const int cellCount = numCols * maze.width() + (coresWithExtraRow -- > 0 ? maze.width() : 0);
-
-        std::span currentBlock = mz.subspan(0, cellCount);
-        mz = mz.subspan(cellCount);
-        threads.emplace_back(f, Maze{currentBlock, numCols, maze.width()}, std::forward<Args> (args)...);
-        currentBlockStart += cellCount;
-      }
-    }
-
-    //TODO: smoothing. At least for now it will be easier to just add it to parallelization. Maybe there is a good
-    //way to allow users to customize it though. 
+    f (maze, seed, std::forward<Args> (args)...);
+    return;
   }
+
+  // used for smoothing over edges between generated maze segments
+  std::vector<int> blockStarts (coreCount);
+
+  // blocking and parallel maze generation
+  {
+    std::vector<std::jthread> threads (coreCount);
+    // if the seed is passed to each core, it will create n repeated segments on
+    // n cores
+    std::minstd_rand0 r (seed);
+
+    // used to compute the subsection of maze to give to each core
+    int currentBlockStart = 0;
+    int coresWithExtraRow = maze.length () % coreCount;
+    int numCols = maze.length () / coreCount;
+
+    std::span mz{maze[0], maze.size ()};
+
+    for (int thread = 0; thread < coreCount; ++thread)
+    {
+      // need one assignment otherwise the wrong one will be passed to the
+      // jthread
+      const int cellCount =
+        numCols * maze.width () + (coresWithExtraRow-- > 0 ? maze.width () : 0);
+
+      std::span currentBlock = mz.subspan (0, cellCount);
+      mz = mz.subspan (cellCount);
+      threads.emplace_back (f, Maze{currentBlock, numCols, maze.width ()}, r (),
+                            std::forward<Args> (args)...);
+      blockStarts[thread] = currentBlockStart;
+      currentBlockStart += cellCount;
+    }
+  }
+
+  // smoothing is needed because the parallel generation creates n submazes but
+  // does not connect any of them.
+  std::minstd_rand0 r (seed);
+
+  size_t rownum = 0;
+  int anti_consecutive_bias = 0;
+  for (auto block : blockStarts)
+  {
+    rownum += block;
+    size_t start_idx = rownum * maze.width ();
+    for (size_t idx = start_idx; idx < start_idx + maze.width (); ++idx)
+    {
+      Cell prev_cell = maze[idx - 1];
+      auto prev_side = maze.getSide (idx - 1);
+
+      // if the previous cell's top face isnt open and a random check is passed
+      if (prev_cell.top (prev_side) == 0 &&
+          static_cast<int> (r ()) % 11 > anti_consecutive_bias)
+      {
+        maze.connect (idx, maze.getNeighbor (idx, Wall::TOP));
+        anti_consecutive_bias += 3;
+      }
+      else { --anti_consecutive_bias; }
+    }
+  }
+}
 
 };
