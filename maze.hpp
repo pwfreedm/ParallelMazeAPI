@@ -475,11 +475,11 @@ namespace MazeGeneration
     For this method to work properly, a few things are needed:
     1) the first parameter to the algorithm being parallelized needs to ba a
    maze 2) the second parameter to the algorithm being parallelized needs to be
-   an rng seed 2) the width of the maze must be at least 128 cells long (64
-   bytes, 1 cache line) 3) the length of the maze must be at least 4x the core
+   an rng seed 3) the width of the maze must be at least 128 cells long (64
+   bytes, 1 cache line) 4) the length of the maze must be at least 4x the core
    count
 
-    requirements 2 and 3 are imposed to prevent false sharing and save time, as
+    requirements 3 and 4 are imposed to prevent false sharing and save time, as
    the overhead of parallelizing generation of small mazes is too high.
 
     NOTE: If the first two conditions are not met, the program will crash.
