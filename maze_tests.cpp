@@ -26,13 +26,21 @@ TEST_F (MazeTest, ConstructionZeroInitialized)
 }
 
 TEST_F (MazeTest, AccessorsWorking) { 
+  //test a horizontal connection
   m1.connect(0, 1);
   EXPECT_TRUE(m1[0].right(Side::LEFT));
   EXPECT_TRUE(m1[1].left(Side::RIGHT));
 
+  //test a vertical connection
   m2.connect(0,5);
-  EXPECT_TRUE(m1[0].bottom(Side::LEFT));
-  EXPECT_TRUE(m1[5].top(Side::LEFT));
+  EXPECT_TRUE(m2[0].bottom(Side::LEFT));
+  EXPECT_TRUE(m2[5].top(Side::RIGHT));
+
+  //test a connection in the last cell of an odd sized maze
+  assert(m1.size() % 2 == 1);
+  m1.connect(23, 24);
+  EXPECT_TRUE(m1[23].right(Side::RIGHT));
+  EXPECT_TRUE(m1[24].left(Side::LEFT));
 }
 
 

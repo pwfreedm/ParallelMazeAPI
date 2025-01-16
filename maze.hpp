@@ -19,6 +19,8 @@ the algorithm makes use of this header.
 
 #include <bitset>
 #include <concepts>
+#include <cstddef>
+#include <iostream>
 #include <memory>
 #include <new>
 #include <optional>
@@ -216,16 +218,21 @@ public:
   // dimension ctor, creates a numRows x numCols maze
   Maze (size_t numRows, size_t numCols) : len (numRows), wid (numCols)
   {
+    //if len * wid is odd, make an extra cell struct to store the last literal cell
+    //otherwise it will be oob
+    size_t size = numRows * numCols;
+    size = size % 2 == 1 ? (size / 2) + 1 : size / 2;
+
     // because smart pointers don't use default ctors
     if constexpr (std::is_same<Mazeable, std::unique_ptr<Cell[]>> ())
     {
-      mz = std::make_unique<Cell[]> ((numRows * numCols) / 2);
+      mz = std::make_unique<Cell[]> (size);
     }
     else if constexpr (std::is_same<Mazeable, std::shared_ptr<Cell[]>> ())
     {
-      mz = std::make_shared<Cell[]> ((numRows * numCols) / 2);
+      mz = std::make_shared<Cell[]> (size);
     }
-    else { mz = Mazeable ((numRows * numCols) / 2); }
+    else { mz = Mazeable (size); }
   }
 
   // move ctor - takes ownership of an existing mazeable type by moving it in.
@@ -235,11 +242,12 @@ public:
   {
   }
 
-  /** decides if idx is the left or right side of a cell. */
+  /** decides if idx is the left or right side of a cell. 
+      NOTE: odd indices are ALWAYS on the right side of a cell, even if they should be the start of a new row. */
   inline Side
   getSide (size_t idx)
   {
-    return (idx & 0b1) && idx % wid != 0 ? Side::RIGHT : Side::LEFT;
+    return idx & 0b1 ? Side::RIGHT : Side::LEFT;
   }
 
   // Gets the cell pair at index idx in the maze. Does not check bounds.
@@ -324,6 +332,7 @@ public:
   void
   connect (size_t idx1, size_t idx2)
   {
+    //idx2ToWall validates the move as well as converting idx to wall
     auto wall = idx2ToWall (idx1, idx2);
     if (!wall.has_value()) { return; }
 
@@ -417,17 +426,20 @@ public:
   }
 
 private:
+
   // Returns the direction to get to idx2 from idx1
   std::optional<Wall>
   idx2ToWall (size_t idx1, size_t idx2)
   {
     if (!validMove (idx1, idx2)) { return std::nullopt; }
-    size_t diff = idx1 - idx2;
+    int diff = idx1 - idx2;
 
     if (diff == 1) { return std::make_optional (Wall::LEFT); }
-    else if (diff == -1) { return std::make_optional (Wall::RIGHT); }
-    else if (diff > 1) { return std::make_optional (Wall::TOP); }
-    else { return std::make_optional (Wall::BOTTOM); }
+    if (diff == -1){ return std::make_optional (Wall::RIGHT); }
+    if (diff > 1)  { return std::make_optional (Wall::TOP); }
+    if (diff < -1) { return std::make_optional (Wall::BOTTOM); }
+
+    return std::nullopt;
   }
 
   // takes an index and a wall and returns an optional containing the index
