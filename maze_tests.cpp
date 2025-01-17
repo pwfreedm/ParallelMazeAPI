@@ -8,7 +8,7 @@ class MazeTest : public testing::Test
 {
 protected:
   Maze<std::unique_ptr<Cell[]>> m1{5, 5};
-  Maze<std::vector<Cell>> m2{5, 5};
+  Maze<std::vector<Cell>> m2{6, 6};
 
 };
 // Tests that the cell constructor zero initializes properly
@@ -25,16 +25,17 @@ TEST_F (MazeTest, ConstructionZeroInitialized)
   EXPECT_FALSE (c.right (Side::RIGHT));
 }
 
-TEST_F (MazeTest, AccessorsWorking) { 
+TEST_F (MazeTest, SubscriptOperator) { 
   //test a horizontal connection
   m1.connect(0, 1);
   EXPECT_TRUE(m1[0].right(Side::LEFT));
   EXPECT_TRUE(m1[1].left(Side::RIGHT));
 
   //test a vertical connection
-  m2.connect(0,5);
+  assert(m2.size() == 36);
+  m2.connect(0,6);
   EXPECT_TRUE(m2[0].bottom(Side::LEFT));
-  EXPECT_TRUE(m2[5].top(Side::RIGHT));
+  EXPECT_TRUE(m2[6].top(Side::LEFT));
 
   //test a connection in the last cell of an odd sized maze
   assert(m1.size() % 2 == 1);
@@ -69,5 +70,37 @@ TEST_F (MazeTest, ValidMove)
  EXPECT_FALSE(m1.validMove(m1.size(), 24));
  EXPECT_FALSE(m1.validMove(-1, 0));
  EXPECT_FALSE(m1.validMove(0, -1));
+}
+
+TEST_F (MazeTest, GetSide)
+{
+  EXPECT_TRUE(m1.getSide(0) == Side::LEFT);
+  EXPECT_TRUE(m2.getSide(1) == Side::RIGHT);
+
+  EXPECT_FALSE(m1.getSide(5) == Side::LEFT);
+  EXPECT_FALSE(m2.getSide(16) == Side::RIGHT);
+}
+
+TEST_F (MazeTest, EqualityOperator)
+{
+  Maze<std::unique_ptr<Cell[]>> m3 {5, 5};
+  Maze<std::vector<Cell>> m4 {6,6};
+  Maze<std::vector<Cell>> m5 {6, 6};
+
+  //empty mazes of the same size should be equal
+  EXPECT_TRUE(m1 == m3);
+  EXPECT_TRUE(m2 == m4);
+
+  EXPECT_TRUE(m2 == m5);
+  EXPECT_TRUE(m5 == m4);
+
+  //after these three lines, m1 and m4 should be equal but not m3
+  m1.connect(16, 17);
+  m4.connect(16, 17);
+  m3.connect(15, 16);
+
+  EXPECT_FALSE(m1 == m3);
+  EXPECT_FALSE(m2 == m4);
+  EXPECT_FALSE(m1 == Maze(3, 3));
 }
 
