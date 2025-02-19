@@ -150,12 +150,12 @@ TEST_F (MazeTest, RandomConnect)
 {
   std::minstd_rand r(0);
   //optionals can be evaluated as booleans
-  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0));
-  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0));
+  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0).has_value());
+  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0).has_value());
 
   //should be false because no loops are allowed
-  EXPECT_FALSE(m1.connectRandomNeighbor(r, 0));
+  EXPECT_FALSE(m1.connectRandomNeighbor(r, 0).has_value());
 
   //true b/c connections to previously connected cells are allowed
-  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0, true));
+  EXPECT_TRUE(m1.connectRandomNeighbor(r, 0, true).has_value());
 }

@@ -296,9 +296,12 @@ public:
     static std::uniform_int_distribution dist(0, 3);
 
     for (size_t i = 0; i < 4; ++i) {
-      // if loops are allowed, the second half of this cnd will always be true
-      valid[i] =
-          validConnectingWall(idx, Wall(i)) && (cellInMaze(idx) <= allowLoops);
+      size_t secondIdx = wallToIdx2(idx, Wall(i)).value_or(size());
+      valid[i] = validMove(idx, secondIdx);
+
+      if (!allowLoops && cellInMaze(secondIdx)) {
+        valid[i] = 0;
+      }
     }
 
     // since valid has 4 bits, the most this value can ever amount to is 3
@@ -419,97 +422,7 @@ private:
   }
 
   // returns true if the cell at idx has at least one wall open, false o/w
-  bool cellInMaze(size_t idx) {
-    // double negation b/c the only values that matter here are 0 and 1
-    return !!(*this)[idx].sideVal(getSide(idx));
-  }
+  bool cellInMaze(size_t idx) { return mz[idx / 2].sideVal(getSide(idx)); }
 };
 
 //============================= End Maze Definition ============================
-
-// prevent naming conflicts on the parallelize method
-namespace MazeGeneration {
-/** Parallelizes the generation of @p maze using @p f over @p coreCount cores
-
-    For this method to work properly, a few things are needed:
-    1) the first parameter to the algorithm being parallelized needs to ba a
-   maze 2) the second parameter to the algorithm being parallelized needs to be
-   an rng seed 3) the width of the maze must be at least 128 cells long (64
-   bytes, 1 cache line) 4) the length of the maze must be at least 4x the core
-   count
-
-    requirements 3 and 4 are imposed to prevent false sharing and save time, as
-   the overhead of parallelizing generation of small mazes is too high.
-
-    NOTE: If the first two conditions are not met, the program will crash.
-    NOTE: If the last two conditions are not met, the maze will be generated
-   serially
-*/
-template <class Func, CanMaze Mazeable, class... Args>
-void parallelize(Func &&f, Maze<Mazeable> &maze, long long seed,
-                 size_t coreCount, Args &&...args) {
-  // generate small mazes serially because blocked algorithm restricts domain.
-  if (maze.width() * 2 < std::hardware_destructive_interference_size ||
-      maze.length() < coreCount * 4) {
-    f(maze, seed, std::forward<Args>(args)...);
-    return;
-  }
-
-  // used for smoothing over edges between generated maze segments
-  std::vector<size_t> blockStarts(coreCount);
-
-  // blocking and parallel maze generation
-  {
-    std::vector<std::jthread> threads(coreCount);
-    // if the seed is passed to each core, it will create n repeated segments on
-    // n cores
-    std::minstd_rand0 r(seed);
-
-    // used to compute the subsection of maze to give to each core
-    size_t currentBlockStart = 0;
-    size_t coresWithExtraRow = maze.length() % coreCount;
-    size_t numCols = maze.length() / coreCount;
-
-    std::span mz{maze[0], maze.size()};
-
-    for (size_t thread = 0; thread < coreCount; ++thread) {
-      // need one assignment otherwise the wrong one will be passed to the
-      // jthread
-      const size_t cellCount =
-          numCols * maze.width() + (coresWithExtraRow-- > 0 ? maze.width() : 0);
-
-      std::span currentBlock = mz.subspan(0, cellCount);
-      mz = mz.subspan(cellCount);
-      threads.emplace_back(f, Maze{currentBlock, numCols, maze.width()}, r(),
-                           std::forward<Args>(args)...);
-      blockStarts[thread] = currentBlockStart;
-      currentBlockStart += cellCount;
-    }
-  }
-
-  // smoothing is needed because the parallel generation creates n submazes but
-  // does not connect any of them.
-  std::minstd_rand0 r(seed);
-
-  size_t rownum = 0;
-  size_t anti_consecutive_bias = 0;
-  for (auto block : blockStarts) {
-    rownum += block;
-    size_t start_idx = rownum * maze.width();
-    for (size_t idx = start_idx; idx < start_idx + maze.width(); ++idx) {
-      Cell prev_cell = maze[idx - 1];
-      auto prev_side = maze.getSide(idx - 1);
-
-      // if the previous cell's top face isnt open and a random check is passed
-      if (prev_cell.top(prev_side) == 0 &&
-          static_cast<size_t>(r()) % 11 > anti_consecutive_bias) {
-        maze.connect(idx, maze.getNeighbor(idx, Wall::TOP));
-        anti_consecutive_bias += 3;
-      } else {
-        --anti_consecutive_bias;
-      }
-    }
-  }
-}
-
-}; // namespace MazeGeneration
